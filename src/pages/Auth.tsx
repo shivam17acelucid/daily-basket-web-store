@@ -7,9 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Eye, EyeOff, Mail, Lock, User, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 const Auth = () => {
   const { toast } = useToast();
+  const { login, register } = useAuth();
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [registerData, setRegisterData] = useState({
@@ -21,7 +25,7 @@ const Auth = () => {
     confirmPassword: ''
   });
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!loginData.email || !loginData.password) {
@@ -33,14 +37,24 @@ const Auth = () => {
       return;
     }
 
-    // Simulate login
-    toast({
-      title: "Login Successful",
-      description: "Welcome back to FreshMart!",
-    });
+    const success = await login(loginData.email, loginData.password);
+    
+    if (success) {
+      toast({
+        title: "Login Successful",
+        description: "Welcome back to FreshMart!",
+      });
+      navigate('/store');
+    } else {
+      toast({
+        title: "Login Failed",
+        description: "Invalid email or password",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!registerData.firstName || !registerData.lastName || !registerData.email || 
@@ -71,11 +85,29 @@ const Auth = () => {
       return;
     }
 
-    // Simulate registration
-    toast({
-      title: "Registration Successful",
-      description: "Welcome to FreshMart! Please log in to continue.",
-    });
+    const success = await register(registerData);
+    
+    if (success) {
+      toast({
+        title: "Registration Successful",
+        description: "Account created! Please log in to continue.",
+      });
+      // Reset form and switch to login tab
+      setRegisterData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: ''
+      });
+    } else {
+      toast({
+        title: "Registration Failed",
+        description: "User with this email already exists",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -135,10 +167,10 @@ const Auth = () => {
                   Login
                 </Button>
                 
-                <div className="text-center">
-                  <Button variant="link" className="text-sm text-green-600">
-                    Forgot password?
-                  </Button>
+                <div className="text-center text-sm text-gray-600">
+                  <p>Demo credentials:</p>
+                  <p>Admin: admin@freshmart.com / admin123</p>
+                  <p>User: user@example.com / user123</p>
                 </div>
               </form>
             </TabsContent>

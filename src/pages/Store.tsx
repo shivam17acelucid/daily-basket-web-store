@@ -4,8 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShoppingCart, Search, Filter, Plus, Minus } from 'lucide-react';
+import { ShoppingCart, Search, Filter, Plus, Minus, LogOut, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { useCart } from '@/hooks/useCart';
+import { useNavigate } from 'react-router-dom';
 
 interface Product {
   id: string;
@@ -18,12 +21,12 @@ interface Product {
   unit: string;
 }
 
-interface CartItem extends Product {
-  quantity: number;
-}
-
 const Store = () => {
   const { toast } = useToast();
+  const { user, logout, isAuthenticated } = useAuth();
+  const { cart, addToCart, removeFromCart, getCartItemQuantity, getTotalItems, getTotalPrice, clearCart } = useCart();
+  const navigate = useNavigate();
+  
   const [products] = useState<Product[]>([
     {
       id: '1',
@@ -87,10 +90,10 @@ const Store = () => {
     }
   ]);
 
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [filteredProducts, setFilteredProducts] = useState<Product[]>(products);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
 
@@ -111,50 +114,57 @@ const Store = () => {
     setFilteredProducts(filtered);
   }, [searchTerm, selectedCategory, products]);
 
-  const addToCart = (product: Product) => {
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.id === product.id);
-      if (existingItem) {
-        return prevCart.map(item =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-      return [...prevCart, { ...product, quantity: 1 }];
-    });
+  const handleAddToCart = (product: Product) => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Please Login",
+        description: "You need to login to add items to cart",
+        variant: "destructive"
+      });
+      navigate('/auth');
+      return;
+    }
 
+    addToCart(product);
     toast({
       title: "Added to cart",
       description: `${product.name} has been added to your cart`,
     });
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.id === productId);
-      if (existingItem && existingItem.quantity > 1) {
-        return prevCart.map(item =>
-          item.id === productId
-            ? { ...item, quantity: item.quantity - 1 }
-            : item
-        );
-      }
-      return prevCart.filter(item => item.id !== productId);
+  const handleCheckout = () => {
+    if (cart.length === 0) return;
+    
+    // Simulate order placement
+    const orderData = {
+      id: Date.now().toString(),
+      items: cart,
+      total: getTotalPrice(),
+      date: new Date().toISOString(),
+      userId: user?.id
+    };
+    
+    // Save order to localStorage
+    const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+    orders.push(orderData);
+    localStorage.setItem('orders', JSON.stringify(orders));
+    
+    clearCart();
+    setShowCheckout(false);
+    
+    toast({
+      title: "Order Placed Successfully!",
+      description: `Your order of $${getTotalPrice().toFixed(2)} has been confirmed.`,
     });
   };
 
-  const getCartItemQuantity = (productId: string) => {
-    const item = cart.find(item => item.id === productId);
-    return item ? item.quantity : 0;
-  };
-
-  const getTotalItems = () => {
-    return cart.reduce((total, item) => total + item.quantity, 0);
-  };
-
-  const getTotalPrice = () => {
-    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    });
   };
 
   return (
@@ -167,7 +177,28 @@ const Store = () => {
               <h1 className="text-2xl font-bold text-green-600">FreshMart</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <Button variant="outline" className="relative">
+              {isAuthenticated ? (
+                <>
+                  <div className="flex items-center space-x-2 text-sm">
+                    <User className="h-4 w-4" />
+                    <span>Welcome, {user?.firstName}</span>
+                  </div>
+                  {user?.isAdmin && (
+                    <Button variant="outline" onClick={() => navigate('/admin')}>
+                      Admin Panel
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" onClick={() => navigate('/auth')}>
+                  Login
+                </Button>
+              )}
+              <Button variant="outline" className="relative" onClick={() => setShowCheckout(true)}>
                 <ShoppingCart className="h-5 w-5" />
                 {getTotalItems() > 0 && (
                   <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
@@ -179,6 +210,47 @@ const Store = () => {
           </div>
         </div>
       </header>
+
+      {/* Checkout Modal */}
+      {showCheckout && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle>Checkout</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {cart.length === 0 ? (
+                <p>Your cart is empty</p>
+              ) : (
+                <div className="space-y-2">
+                  {cart.map(item => (
+                    <div key={item.id} className="flex justify-between items-center">
+                      <span className="text-sm">{item.name} x{item.quantity}</span>
+                      <span className="text-sm font-semibold">${(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t pt-2">
+                    <div className="flex justify-between font-bold">
+                      <span>Total:</span>
+                      <span>${getTotalPrice().toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex space-x-2">
+              <Button variant="outline" onClick={() => setShowCheckout(false)}>
+                Cancel
+              </Button>
+              {cart.length > 0 && (
+                <Button onClick={handleCheckout} className="bg-green-600 hover:bg-green-700">
+                  Place Order
+                </Button>
+              )}
+            </CardFooter>
+          </Card>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Search and Filter */}
@@ -253,14 +325,14 @@ const Store = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => addToCart(product)}
+                      onClick={() => handleAddToCart(product)}
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
                   </div>
                 ) : (
                   <Button
-                    onClick={() => addToCart(product)}
+                    onClick={() => handleAddToCart(product)}
                     className="w-full bg-green-600 hover:bg-green-700"
                     disabled={product.stock === 0}
                   >
@@ -272,17 +344,18 @@ const Store = () => {
           ))}
         </div>
 
-        {/* Cart Summary */}
-        {cart.length > 0 && (
+        {/* Cart Summary - only show if authenticated and has items */}
+        {isAuthenticated && cart.length > 0 && (
           <div className="fixed bottom-4 right-4 bg-white p-4 rounded-lg shadow-lg border max-w-sm">
             <h3 className="font-semibold mb-2">Cart Summary</h3>
             <div className="space-y-1 text-sm">
-              {cart.map(item => (
+              {cart.slice(0, 3).map(item => (
                 <div key={item.id} className="flex justify-between">
                   <span>{item.name} x{item.quantity}</span>
                   <span>${(item.price * item.quantity).toFixed(2)}</span>
                 </div>
               ))}
+              {cart.length > 3 && <div className="text-xs text-gray-500">...and {cart.length - 3} more items</div>}
             </div>
             <div className="border-t pt-2 mt-2">
               <div className="flex justify-between font-semibold">
@@ -290,7 +363,10 @@ const Store = () => {
                 <span>${getTotalPrice().toFixed(2)}</span>
               </div>
             </div>
-            <Button className="w-full mt-3 bg-green-600 hover:bg-green-700">
+            <Button 
+              className="w-full mt-3 bg-green-600 hover:bg-green-700"
+              onClick={() => setShowCheckout(true)}
+            >
               Checkout
             </Button>
           </div>
